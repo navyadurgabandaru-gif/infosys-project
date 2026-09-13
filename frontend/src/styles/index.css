@@ -1,0 +1,51 @@
+@import './theme.css';
+@import './layout.css';
+/* =========================================================
+   REMINDER PREFERENCES - DARK MODE FIX
+   ========================================================= */
+
+.reminder-preferences input,
+.reminder-preferences select,
+.reminder-preferences input[type="time"],
+.reminder-preferences select option {
+  color: #f8fafc !important;
+  background-color: #172033 !important;
+  border-color: #263852 !important;
+}
+
+/* Placeholder text */
+.reminder-preferences input::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Dropdown options */
+.reminder-preferences select option {
+  background-color: #172033 !important;
+  color: #f8fafc !important;
+}
+
+/* Time input clock icon */
+.reminder-preferences input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 0.9;
+}
+
+/* Focus state */
+.reminder-preferences input:focus,
+.reminder-preferences select:focus {
+  color: #ffffff !important;
+  border-color: #2563eb !important;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+/* Select arrow */
+.reminder-preferences select {
+  color-scheme: dark;
+  cursor: pointer;
+}
+
+/* Checkbox */
+.reminder-preferences input[type="checkbox"] {
+  accent-color: #2563eb;
+}
