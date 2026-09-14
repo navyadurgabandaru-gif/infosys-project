@@ -1,31 +1,33 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function OAuthCallback() {
-  const [params] = useSearchParams();
-  const { loginWithGoogleToken, homePathFor } = useAuth();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const ran = useRef(false);
+  const { loginWithGoogleToken, homePathFor } = useAuth();
 
   useEffect(() => {
-    if (ran.current) return;
-    ran.current = true;
+    const token = searchParams.get('token');
 
-    const token = params.get('token');
     if (!token) {
-      navigate('/login?error=google');
+      navigate('/login?error=no_token', { replace: true });
       return;
     }
+
     loginWithGoogleToken(token)
-      .then((user) => navigate(homePathFor(user.role)))
-      .catch(() => navigate('/login?error=google'));
-  }, [params, loginWithGoogleToken, homePathFor, navigate]);
+      .then((user) => {
+        const targetPath = homePathFor(user.role);
+        navigate(targetPath, { replace: true });
+      })
+      .catch(() => {
+        navigate('/login?error=auth_failed', { replace: true });
+      });
+  }, [searchParams, navigate, loginWithGoogleToken, homePathFor]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: 14 }}>
-      <div className="spinner" style={{ borderTopColor: 'var(--color-primary)', borderColor: 'var(--color-border)', width: 28, height: 28 }} />
-      <p className="text-muted">Signing you in with Google…</p>
+    <div style={{ display: 'grid', placeItems: 'center', height: '100vh' }}>
+      <h2>Completing Google Sign-In...</h2>
     </div>
   );
 }
