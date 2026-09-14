@@ -19,9 +19,12 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      if (!window.location.pathname.startsWith('/login')) {
+      const currentPath = window.location.pathname;
+      
+      // DO NOT force-redirect if we are on login, register, or oauth/callback routes
+      if (!currentPath.startsWith('/login') && !currentPath.startsWith('/oauth/callback')) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
         window.location.href = '/login';
       }
     }
