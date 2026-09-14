@@ -30,7 +30,9 @@ export function AuthProvider({ children }) {
       return;
     }
     try {
-      const { data } = await api.get('/auth/me');
+      const { data } = await api.get('/auth/me', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       localStorage.setItem('user', JSON.stringify(data.user));
       setUser(data.user);
     } catch {
@@ -58,9 +60,14 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  // UPDATED: Explicitly sends the Authorization header so /auth/me never fails on first load
   const loginWithGoogleToken = async (token) => {
     localStorage.setItem('token', token);
-    const { data } = await api.get('/auth/me');
+    const { data } = await api.get('/auth/me', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
     localStorage.setItem('user', JSON.stringify(data.user));
     setUser(data.user);
     return data.user;
