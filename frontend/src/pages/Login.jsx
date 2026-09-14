@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-// Dynamically use VITE_API_URL or fallback directly to live Render backend
-const SERVER_URL = import.meta.env.VITE_API_URL || 'https://ai-skin-backend-74zx.onrender.com';
+// Standardize backend base URL without trailing '/api'
+const RAW_URL = import.meta.env.VITE_API_URL || 'https://ai-skin-backend-74zx.onrender.com';
+const SERVER_URL = RAW_URL.replace(/\/api\/?$/, '');
 
 export default function Login() {
   const { login, homePathFor } = useAuth();
