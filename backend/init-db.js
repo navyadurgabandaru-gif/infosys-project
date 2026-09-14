@@ -59,7 +59,21 @@ async function initDB() {
       );
     `);
 
-    // 5. Products Table
+    // 5. Reminder Settings Table (ADDED)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS reminder_settings (
+        id SERIAL PRIMARY KEY,
+        user_id INT REFERENCES users(id) ON DELETE CASCADE,
+        morning_reminder BOOLEAN DEFAULT true,
+        morning_time TIME DEFAULT '08:00:00',
+        evening_reminder BOOLEAN DEFAULT true,
+        evening_time TIME DEFAULT '20:00:00',
+        email_notifications BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 6. Products Table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS products (
         id SERIAL PRIMARY KEY,
@@ -74,7 +88,7 @@ async function initDB() {
       );
     `);
 
-    // 6. Ingredients Table
+    // 7. Ingredients Table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS ingredients (
         id SERIAL PRIMARY KEY,
@@ -86,7 +100,7 @@ async function initDB() {
       );
     `);
 
-    // 7. Appointments Table
+    // 8. Appointments Table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS appointments (
         id SERIAL PRIMARY KEY,
@@ -99,7 +113,7 @@ async function initDB() {
       );
     `);
 
-    // 8. Notifications Table
+    // 9. Notifications Table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS notifications (
         id SERIAL PRIMARY KEY,
@@ -111,7 +125,7 @@ async function initDB() {
       );
     `);
 
-    // Safe column additions for existing installations
+    // Safe column additions
     await pool.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
@@ -119,7 +133,7 @@ async function initDB() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
     `);
 
-    console.log('✓ All 8 database tables and schema modifications applied successfully.');
+    console.log('✓ All database tables successfully initialized.');
   } catch (err) {
     console.error('✗ Schema synchronization failed:', err.message);
   }
