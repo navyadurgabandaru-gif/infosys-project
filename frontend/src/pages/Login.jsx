@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
+// Dynamically use VITE_API_URL or fallback directly to live Render backend
+const SERVER_URL = import.meta.env.VITE_API_URL || 'https://ai-skin-backend-74zx.onrender.com';
 
 export default function Login() {
   const { login, homePathFor } = useAuth();
