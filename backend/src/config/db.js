@@ -43,6 +43,9 @@ const pool = new Pool({
   user,
   password: String(password),
   database,
+  ssl: {
+  rejectUnauthorized: false,
+},
 });
 
 pool.on('error', (err) => {
