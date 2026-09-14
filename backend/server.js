@@ -29,8 +29,6 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-// Passport is used in stateless mode (session: false) — it only signs a
-// JWT after Google verifies the user, so no server-side session is needed.
 app.use(passport.initialize());
 
 // Serve uploaded skin images
@@ -58,25 +56,17 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-// `new Pool()` never validates credentials by itself — it only tries to
-// connect on the first query. Previously this meant `npm run dev` could
-// print its success banner even with a totally broken PGPASSWORD, and the
-// failure would only appear later on the first login/register request (or
-// in `npm run db:init`, which is why it looked like only db:init was
-// broken). Querying here makes a bad DB config fail immediately and
-// clearly, at the point you'd expect it to.
 async function start() {
   try {
     await pool.query('SELECT 1');
     console.log('✓ Connected to PostgreSQL.');
   } catch (err) {
     console.error('✗ Could not connect to PostgreSQL:', err.message);
-    console.error('  Check backend/.env — PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE.');
     process.exit(1);
   }
 
   app.listen(PORT, () => {
-    console.log(`AI Skincare Planner API running on http://localhost:${PORT}`);
+    console.log(`AI Skincare Planner API running on port ${PORT}`);
   });
 }
 
