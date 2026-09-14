@@ -9,7 +9,7 @@ async function initDB() {
   try {
     console.log('🔄 Syncing database schema...');
 
-    // 1. Ensure users table exists
+    // 1. Create base users table if it doesn't exist
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -22,13 +22,15 @@ async function initDB() {
       );
     `);
 
-    // 2. Add all potential columns expected by the Auth/User controller
+    // 2. Safely inject all columns required by authController.js & passport.js
     await pool.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar VARCHAR(500);
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS provider VARCHAR(50) DEFAULT 'local';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS provider VARCHAR(50) DEFAULT 'LOCAL';
       ALTER TABLE users ADD COLUMN IF NOT EXISTS skin_type VARCHAR(100);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT false;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
     `);
 
