@@ -1,10 +1,10 @@
 require('dotenv').config();
-require('./init-db');
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 const path = require('path');
 const pool = require('./src/config/db');
+const { migrate } = require('./src/db/migrate');
 const passport = require('./src/config/passport');
 const { notFound, errorHandler } = require('./src/middleware/errorHandler');
 
@@ -85,6 +85,23 @@ async function start() {
     console.log('✓ Connected to PostgreSQL.');
   } catch (err) {
     console.error('✗ Could not connect to PostgreSQL:', err.message);
+    process.exit(1);
+  }
+
+  // Idempotent schema sync (schema.sql: CREATE TABLE IF NOT EXISTS / ADD
+  // COLUMN IF NOT EXISTS / CREATE INDEX IF NOT EXISTS everywhere) runs on
+  // every boot, before the server accepts any requests. Non-destructive —
+  // never drops or truncates anything — so it's safe to run on every
+  // deploy against an existing, already-populated Neon database.
+  try {
+    console.log('→ Syncing database schema...');
+    await migrate(pool);
+    console.log('✓ Database schema is up to date.');
+  } catch (err) {
+    console.error('✗ Database schema sync failed:', err.message);
+    // Fail fast rather than serve traffic against a schema the code
+    // doesn't match — that's what produced the silent "relation does
+    // not exist" errors in the first place.
     process.exit(1);
   }
 
