@@ -1,142 +1,38 @@
+/**
+ * COMPATIBILITY SHIM -- not the real schema anymore.
+ *
+ * This file used to define its OWN, separate, out-of-date table schema
+ * (no doctor_profiles/consultant_profiles/user_skincare_preferences/
+ * product_recommendations, appointments.doctor_id instead of
+ * provider_id/provider_role, no skin_reports.reviewed_by, and a
+ * reminder_settings.user_id with no UNIQUE constraint -- which is
+ * exactly why `ON CONFLICT (user_id)` in notificationService.js was
+ * failing). server.js required this file directly on every boot, so
+ * that old/incompatible schema is what was actually being applied to
+ * the deployed Neon database -- the real, complete schema in
+ * src/db/schema.sql was never being run.
+ *
+ * server.js no longer requires this file (it now awaits
+ * src/db/migrate.js's migrate() function before listening, which is
+ * the single source of truth for the schema). This shim is kept only
+ * so that a deploy target hardcoded to run `node init-db.js` directly
+ * (e.g. an old Render Start Command) still ends up doing the correct,
+ * safe, idempotent thing instead of recreating the old wrong schema.
+ *
+ * Safe to delete once you've confirmed nothing invokes this file by
+ * name anymore.
+ */
+const { migrate } = require('./src/db/migrate');
 const pool = require('./src/config/db');
 
-async function initDB() {
+(async () => {
   try {
-    console.log('Starting full database schema synchronization...');
-
-    // 1. Users Table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password VARCHAR(255),
-        full_name VARCHAR(255),
-        role VARCHAR(50) DEFAULT 'USER',
-        google_id VARCHAR(255),
-        avatar_url TEXT,
-        phone VARCHAR(50),
-        provider VARCHAR(50) DEFAULT 'local',
-        is_active BOOLEAN DEFAULT true,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    // 2. Skin Reports Table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS skin_reports (
-        id SERIAL PRIMARY KEY,
-        user_id INT REFERENCES users(id) ON DELETE CASCADE,
-        skin_type VARCHAR(50),
-        concerns TEXT[],
-        metrics JSONB,
-        summary TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    // 3. Skincare Plans Table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS skincare_plans (
-        id SERIAL PRIMARY KEY,
-        user_id INT REFERENCES users(id) ON DELETE CASCADE,
-        routine_type VARCHAR(50),
-        products JSONB,
-        recommendations TEXT[],
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    // 4. Skin Progress Logs Table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS skin_progress_logs (
-        id SERIAL PRIMARY KEY,
-        user_id INT REFERENCES users(id) ON DELETE CASCADE,
-        log_date DATE DEFAULT CURRENT_DATE,
-        notes TEXT,
-        image_url TEXT,
-        metrics JSONB,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    // 5. Reminder Settings Table (ADDED)
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS reminder_settings (
-        id SERIAL PRIMARY KEY,
-        user_id INT REFERENCES users(id) ON DELETE CASCADE,
-        morning_reminder BOOLEAN DEFAULT true,
-        morning_time TIME DEFAULT '08:00:00',
-        evening_reminder BOOLEAN DEFAULT true,
-        evening_time TIME DEFAULT '20:00:00',
-        email_notifications BOOLEAN DEFAULT true,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    // 6. Products Table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS products (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        brand VARCHAR(255),
-        category VARCHAR(100),
-        suitable_skin_types TEXT[],
-        key_ingredients TEXT[],
-        conflicting_ingredients TEXT[],
-        description TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    // 7. Ingredients Table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS ingredients (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(255) UNIQUE NOT NULL,
-        description TEXT,
-        benefits TEXT[],
-        conflicts TEXT[],
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    // 8. Appointments Table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS appointments (
-        id SERIAL PRIMARY KEY,
-        user_id INT REFERENCES users(id) ON DELETE CASCADE,
-        doctor_id INT REFERENCES users(id) ON DELETE SET NULL,
-        appointment_date TIMESTAMP NOT NULL,
-        status VARCHAR(50) DEFAULT 'PENDING',
-        notes TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    // 9. Notifications Table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS notifications (
-        id SERIAL PRIMARY KEY,
-        user_id INT REFERENCES users(id) ON DELETE CASCADE,
-        title VARCHAR(255) NOT NULL,
-        message TEXT NOT NULL,
-        is_read BOOLEAN DEFAULT false,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    // Safe column additions
-    await pool.query(`
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS provider VARCHAR(50) DEFAULT 'local';
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
-    `);
-
-    console.log('✓ All database tables successfully initialized.');
+    console.log('→ init-db.js is a compatibility shim; delegating to src/db/migrate.js...');
+    await migrate(pool);
   } catch (err) {
-    console.error('✗ Schema synchronization failed:', err.message);
+    console.error('✗ Migration failed:', err);
+    process.exitCode = 1;
+  } finally {
+    await pool.end();
   }
-}
-
-initDB();
+})();
