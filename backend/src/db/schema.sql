@@ -47,6 +47,30 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- ========== LEGACY-COMPATIBILITY PATCH (users) ==========
+-- CREATE TABLE IF NOT EXISTS above is a no-op on a database where `users`
+-- already existed under an older, pre-schema.sql shape (email/password/
+-- full_name/role varchar, no name/skin_type/updated_at columns at all).
+-- These ALTERs land the columns this schema/API actually needs onto that
+-- older table too, without touching or deleting any existing row.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(120);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS skin_type VARCHAR(40);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT NOW();
+-- Backfill `name` from the older `full_name` column, only if that column
+-- exists (it won't on a database that was always on this schema) and only
+-- for rows that don't already have a name. Never overwrites a real value.
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'users' AND column_name = 'full_name'
+  ) THEN
+    UPDATE users SET name = full_name WHERE name IS NULL AND full_name IS NOT NULL;
+  END IF;
+END $$;
+-- name stays nullable at the DB level (a NOT NULL here could fail on rows
+-- with neither `name` nor a `full_name` to backfill from) -- the API
+-- already requires it on every write path for new/updated users.
+
 -- ========== DOCTOR PROFILE (extends a users row with role = DOCTOR) ==========
 CREATE TABLE IF NOT EXISTS doctor_profiles (
   id                SERIAL PRIMARY KEY,
@@ -85,6 +109,31 @@ CREATE TABLE IF NOT EXISTS skin_reports (
   created_at        TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- ========== LEGACY-COMPATIBILITY PATCH (skin_reports) ==========
+-- A pre-existing skin_reports table (from before schema.sql) has only
+-- id/user_id/skin_type/concerns/metrics/summary/created_at -- none of
+-- these. image_path/status get no default because there's no safe value
+-- to invent for old rows; they stay nullable at the DB level (the API
+-- already requires them on every new report).
+ALTER TABLE skin_reports ADD COLUMN IF NOT EXISTS image_path TEXT;
+ALTER TABLE skin_reports ADD COLUMN IF NOT EXISTS skin_health_score INTEGER;
+ALTER TABLE skin_reports ADD COLUMN IF NOT EXISTS overall_condition VARCHAR(60);
+ALTER TABLE skin_reports ADD COLUMN IF NOT EXISTS risk_factors JSONB DEFAULT '[]';
+ALTER TABLE skin_reports ADD COLUMN IF NOT EXISTS recommendations JSONB DEFAULT '[]';
+ALTER TABLE skin_reports ADD COLUMN IF NOT EXISTS status report_status;
+ALTER TABLE skin_reports ALTER COLUMN status SET DEFAULT 'PENDING_REVIEW';
+UPDATE skin_reports SET status = 'PENDING_REVIEW' WHERE status IS NULL;
+ALTER TABLE skin_reports ADD COLUMN IF NOT EXISTS reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE skin_reports ADD COLUMN IF NOT EXISTS doctor_notes TEXT;
+-- A pre-existing `concerns` column is TEXT[] (old schema); the API writes
+-- JSON into it (userController.js: JSON.stringify(analysis.concerns)),
+-- which a text[] column rejects. Converting the column to JSONB is safe
+-- and re-runnable: to_jsonb() on data already stored as text[] preserves
+-- it as a JSON array of strings; running this again once the column is
+-- already JSONB is a harmless no-op re-assertion of the same type.
+ALTER TABLE skin_reports ALTER COLUMN concerns TYPE JSONB USING to_jsonb(concerns);
+ALTER TABLE skin_reports ALTER COLUMN concerns SET DEFAULT '[]';
+
 -- ========== APPOINTMENTS ==========
 CREATE TABLE IF NOT EXISTS appointments (
   id              SERIAL PRIMARY KEY,
@@ -98,6 +147,19 @@ CREATE TABLE IF NOT EXISTS appointments (
   notes           TEXT,
   created_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+-- ========== LEGACY-COMPATIBILITY PATCH (appointments) ==========
+-- A pre-existing appointments table (from before schema.sql) has
+-- doctor_id, not provider_id/provider_role, and no report_id or
+-- appointment_time at all -- this is exactly why `idx_appt_provider`
+-- below used to fail with "column provider_id does not exist". No safe
+-- value exists to backfill provider_id/provider_role/appointment_time
+-- for old rows, so they stay nullable at the DB level; the API already
+-- requires them on every new appointment.
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS provider_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS provider_role provider_role;
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS report_id INTEGER REFERENCES skin_reports(id) ON DELETE SET NULL;
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS appointment_time TIME;
 
 CREATE INDEX IF NOT EXISTS idx_reports_user ON skin_reports(user_id);
 CREATE INDEX IF NOT EXISTS idx_appt_user ON appointments(user_id);
@@ -116,6 +178,18 @@ CREATE TABLE IF NOT EXISTS skincare_plans (
   seasonal_recommendations JSONB DEFAULT '[]',            -- [{title, description}]
   created_at               TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+-- ========== LEGACY-COMPATIBILITY PATCH (skincare_plans) ==========
+-- A pre-existing skincare_plans table (from before schema.sql) has only
+-- id/user_id/routine_type/products/recommendations/created_at -- none of
+-- these newer columns.
+ALTER TABLE skincare_plans ADD COLUMN IF NOT EXISTS report_id INTEGER REFERENCES skin_reports(id) ON DELETE SET NULL;
+ALTER TABLE skincare_plans ADD COLUMN IF NOT EXISTS skin_type VARCHAR(40);
+ALTER TABLE skincare_plans ADD COLUMN IF NOT EXISTS season VARCHAR(20);
+ALTER TABLE skincare_plans ADD COLUMN IF NOT EXISTS morning_routine JSONB DEFAULT '[]';
+ALTER TABLE skincare_plans ADD COLUMN IF NOT EXISTS evening_routine JSONB DEFAULT '[]';
+ALTER TABLE skincare_plans ADD COLUMN IF NOT EXISTS weekly_treatments JSONB DEFAULT '[]';
+ALTER TABLE skincare_plans ADD COLUMN IF NOT EXISTS seasonal_recommendations JSONB DEFAULT '[]';
 
 CREATE INDEX IF NOT EXISTS idx_plans_user ON skincare_plans(user_id);
 
@@ -185,6 +259,25 @@ CREATE TABLE IF NOT EXISTS ingredients (
   created_at          TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- ========== LEGACY-COMPATIBILITY PATCH (ingredients) ==========
+-- A pre-existing ingredients table (from before schema.sql) has only
+-- id/name/description/benefits/conflicts/created_at -- category (used by
+-- idx_ingredients_category below) and everything else here is new.
+ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS category VARCHAR(60);
+ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS suitable_skin_types JSONB DEFAULT '[]';
+ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS suitable_concerns JSONB DEFAULT '[]';
+ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS irritation_potential VARCHAR(20) DEFAULT 'low';
+ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS allergy_notes TEXT;
+ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS comedogenic_rating SMALLINT;
+ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS usage_guidance TEXT;
+ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS avoid_with JSONB DEFAULT '[]';
+-- A pre-existing `benefits` column is TEXT[] (old schema); seedCatalog.js
+-- writes JSON into it (JSON.stringify(ing.benefits)), which a text[]
+-- column rejects. Safe, re-runnable conversion -- see the same note on
+-- skin_reports.concerns above.
+ALTER TABLE ingredients ALTER COLUMN benefits TYPE JSONB USING to_jsonb(benefits);
+ALTER TABLE ingredients ALTER COLUMN benefits SET DEFAULT '[]';
+
 CREATE INDEX IF NOT EXISTS idx_ingredients_category ON ingredients(category);
 
 -- ========== PRODUCT CATALOG ==========
@@ -205,6 +298,17 @@ CREATE TABLE IF NOT EXISTS products (
 );
 
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+
+-- ========== LEGACY-COMPATIBILITY PATCH (products) ==========
+-- A pre-existing products table (from before schema.sql) has only
+-- id/name/brand/category/suitable_skin_types/key_ingredients/
+-- conflicting_ingredients/description/created_at -- none of these.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS skin_types JSONB DEFAULT '[]';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS skin_concerns JSONB DEFAULT '[]';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS ingredients JSONB DEFAULT '[]';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS price NUMERIC(10,2);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS usage_instructions TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS sensitivity_warnings JSONB DEFAULT '[]';
 
 -- Migration-safe: adds product_url on databases where `products` was
 -- created before this column existed (the CREATE TABLE IF NOT EXISTS
@@ -272,6 +376,20 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- ========== LEGACY-COMPATIBILITY PATCH (notifications) ==========
+-- A pre-existing notifications table (from before schema.sql) has only
+-- id/user_id/title/message/is_read/created_at -- no `type`/status/
+-- scheduled_time. A constant DEFAULT lets these be added as NOT NULL in
+-- one step -- Postgres backfills every existing row with the default at
+-- ALTER time, so this never leaves a NOT NULL column with NULLs in it.
+-- 'PLATFORM' is an existing, generic catch-all value of notification_type
+-- (see the enum above) -- every new notification the app creates always
+-- supplies its own real type, so this default only ever applies to old
+-- pre-migration rows.
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS type notification_type NOT NULL DEFAULT 'PLATFORM';
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS scheduled_time TIMESTAMP;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'SENT';
+
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, is_read);
 
@@ -297,3 +415,36 @@ CREATE TABLE IF NOT EXISTS reminder_settings (
   updated_at                    TIMESTAMP NOT NULL DEFAULT NOW(),
   created_at                    TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+-- ========== LEGACY-COMPATIBILITY PATCH (reminder_settings) ==========
+-- A pre-existing reminder_settings table (from before schema.sql) has a
+-- completely different, differently-named set of columns (morning_
+-- reminder/morning_time/evening_reminder/evening_time/email_notifications)
+-- and -- critically -- no UNIQUE constraint on user_id at all, which is
+-- exactly why `ON CONFLICT (user_id)` in notificationService.js was
+-- failing with "no unique or exclusion constraint matching the ON
+-- CONFLICT specification". Every column below has a constant DEFAULT, so
+-- adding them as NOT NULL in one step is safe and backfills existing rows
+-- automatically.
+ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS morning_routine_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS morning_routine_time TIME NOT NULL DEFAULT '08:00';
+ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS evening_routine_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS evening_routine_time TIME NOT NULL DEFAULT '21:00';
+ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS hydration_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS hydration_time TIME NOT NULL DEFAULT '13:00';
+ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS hydration_frequency VARCHAR(20) NOT NULL DEFAULT 'daily';
+ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS sleep_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS sleep_time TIME NOT NULL DEFAULT '22:30';
+ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS replenishment_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS replenishment_frequency_days INTEGER NOT NULL DEFAULT 30;
+ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS progress_alerts_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT NOW();
+-- THE fix for the ON CONFLICT (user_id) error: a plain unique index
+-- satisfies ON CONFLICT's target-inference requirement just as well as a
+-- formal UNIQUE constraint, and CREATE UNIQUE INDEX supports IF NOT
+-- EXISTS (ADD CONSTRAINT does not), which is what keeps this idempotent.
+-- This can only fail if duplicate user_id rows already exist, which
+-- shouldn't be possible given the ON CONFLICT insert was erroring out
+-- rather than silently double-inserting -- but if it does fail, dedupe
+-- with the query in the migration guide before re-running.
+CREATE UNIQUE INDEX IF NOT EXISTS reminder_settings_user_id_key ON reminder_settings(user_id);
