@@ -1,14 +1,8 @@
 /**
  * Database migration runner.
  *
- * Applies the complete schema.sql file safely and idempotently.
- * This file exports migrate() so it can be called by:
- *
- *   - init-db.js
- *   - server.js
- *
- * It does NOT automatically execute when required.
- * The caller is responsible for closing the database pool.
+ * Applies schema.sql and verifies that the required users table
+ * actually exists afterward.
  */
 
 const fs = require('fs');
@@ -36,9 +30,40 @@ async function migrate(pool) {
       throw new Error('schema.sql is empty');
     }
 
+    console.log('→ Executing schema.sql...');
     await client.query(schema);
 
-    console.log('✓ All database tables successfully initialized.');
+    console.log('✓ schema.sql executed successfully.');
+
+    // Verify that the critical users table exists.
+    const result = await client.query(`
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = 'users'
+      ) AS users_table_exists;
+    `);
+
+    if (!result.rows[0].users_table_exists) {
+      throw new Error(
+        'Migration reported success, but public.users does not exist.'
+      );
+    }
+
+    console.log('✓ Verified: public.users exists.');
+
+    // Show how many public tables were created.
+    const tableResult = await client.query(`
+      SELECT COUNT(*)::int AS table_count
+      FROM information_schema.tables
+      WHERE table_schema = 'public';
+    `);
+
+    console.log(
+      `✓ Verified: ${tableResult.rows[0].table_count} public tables exist.`
+    );
+
     console.log('✓ Database schema synchronization completed.');
   } catch (err) {
     console.error('✗ Database migration failed:', err);
