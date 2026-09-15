@@ -24,6 +24,16 @@ const demoUsers = [
 
 async function run() {
   const client = await pool.connect();
+  const dbInfo = await client.query(`
+  SELECT
+    current_database() AS database_name,
+    current_user AS database_user,
+    current_schema() AS schema_name,
+    inet_server_addr() AS server_address,
+    inet_server_port() AS server_port
+`);
+
+console.log('→ DATABASE IDENTITY:', dbInfo.rows[0]);
   try {
     console.log('→ Creating schema...');
     const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
